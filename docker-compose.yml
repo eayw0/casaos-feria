@@ -1,0 +1,105 @@
+volumes:
+  postgres_data:
+  mattermost_data:
+  kanboard_data:
+  grafana_data:
+  prometheus_data:
+  uptimekuma_data:
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mattermost
+      POSTGRES_USER: mattermost
+      POSTGRES_PASSWORD: admin123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mattermost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - casanet
+
+  mattermost:
+    image: mattermost/mattermost-team-edition:latest
+    container_name: mattermost
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MM_SQLSETTINGS_DRIVERNAME: postgres
+      MM_SQLSETTINGS_DATASOURCE: postgres://mattermost:admin123@postgres:5432/mattermost?sslmode=disable&connect_timeout=30
+      MM_SERVICESETTINGS_SITEURL: http://192.168.2.104:8065
+      MM_SERVICESETTINGS_LISTENADDRESS: :8065
+      MM_SERVICESETTINGS_ENABLELOCALMODE: "true"
+    volumes:
+      - mattermost_data:/mattermost/data
+    ports:
+      - "8065:8065"
+    networks:
+      - casanet
+
+  kanboard:
+    image: kanboard/kanboard:latest
+    container_name: kanboard
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: sqlite:///var/www/app/data/kanboard.db
+    volumes:
+      - kanboard_data:/var/www/app/data
+    ports:
+      - "8081:80"
+    networks:
+      - casanet
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    volumes:
+      - prometheus_data:/prometheus
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9091:9090"
+    networks:
+      - casanet
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3003:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - casanet
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:latest
+    container_name: uptime-kuma
+    restart: unless-stopped
+    volumes:
+      - uptimekuma_data:/app/data
+    ports:
+      - "3004:3001"
+    networks:
+      - casanet
+
+networks:
+  casanet:
+    driver: bridge
